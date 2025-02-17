@@ -1,0 +1,100 @@
+---
+title: "Assignment I"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+## Load libraries
+
+```{r}
+library(tidyverse)
+```
+
+## Read the data
+
+I have carefully handpicked variables that can help us characterize
+different economic structures from the World Development Indicators of
+the World Bank.
+
+The dataset includes:
+
+-   Value added of different sectors of the economy (in % of GDP)
+
+-   Trade balance of the country (in % of GDP)
+
+-   Trade openness (trade as % of GDP)
+
+-   Central government debt (as a % of GDP) to capture public debt
+
+-   Government consumption expenditure (as a % of GDP) to capture public
+    spending
+
+-   Unemployment (as a % of total labor force)
+
+-   Youth unemployment (as a % of labor force 15-24)
+
+-   Net ODA received (as a % of GNI) to capture reliance on foreign aid
+
+-   Total natural resources rents (as a % of GDP) to capture reliance on
+    natural resources
+
+-   International tourism, receipts (as a % of total exports) to capture
+    reliance on tourism
+
+-   \% of exports ascribable to different sectors to capture reliance on
+    particular type of exports
+
+    -   ex. foods exports as a % of total merchandise exports
+
+    -   ex. insurance and financial services as a % of total commercial
+        service exports
+
+-   Labor force participation rate, female (as a % of total female
+    population ages 15-64) to capture the involvement of women in the
+    economy
+
+-   International migrant stock (% of population) to capture foreign
+    population
+
+-   Age dependency ratio (% of people older than 64 to the total
+    working-age population)
+
+```{r}
+raw_data <- read_csv("WDI_data.csv", show_col_types = FALSE)
+```
+
+```{r, warning=FALSE}
+# Delete rows from 5209 to 5213
+data <- raw_data |> 
+  # Dropping code of the indicator
+  select(- "Series Code") |> 
+  # Converting columns to numeric
+  mutate(across(contains("YR"), as.numeric)) |> 
+  # Obtaining the mean value for the 2015 to 2019 period
+  mutate(mean_value = rowMeans(across(contains("YR")), na.rm = TRUE)) |> 
+  # Dropping captions in the dataset
+  slice(1:5208) |> 
+  # Dropping columns with single year data
+  select(-contains("YR")) |> 
+  # Correctly encode NaN as NA
+  mutate(mean_value = ifelse(is.nan(mean_value), NA, mean_value)) |>
+  # Pivoting wider
+  pivot_wider(names_from = "Series Name", values_from = "mean_value")
+
+str(data)
+```
+
+
+```{r}
+# Calculating NAs, min, median, mean and max by indicator
+# data_summary <- data |> 
+#   summarise(NA_count = sum(is.na(value)), 
+#             min = round(min(value, na.rm = TRUE), 2), 
+#             median = round(median(value, na.rm = TRUE), 2), 
+#             mean = round(mean(value, na.rm = TRUE), 2), 
+#             max = round(max(value, na.rm = TRUE), 2), 
+#             .by = "Series Name")
+```
+
