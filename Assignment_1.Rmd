@@ -17,12 +17,14 @@ rm(list = ls())
 #install.packages("ggplot2")
 #install.packages("RColorBrewer")
 #install.packages("explore")
+#install.packages("corrplot")
 library(tidyverse)
 library(DataExplorer)
 library(mice)
 library(ggplot2)
 library(RColorBrewer)
 library(explore)
+library(corrplot)
 ```
 
 ## Read the data
@@ -31,9 +33,9 @@ I have carefully handpicked variables that can help us characterize different ec
 
 The dataset includes:
 
--   Value added of different sectors of the economy (in % of GDP)
+-   Value added of different sectors of the economy (as a % of GDP)
 
--   Trade balance of the country (in % of GDP)
+-   Trade balance of the country (as a % of GDP)
 
 -   Trade openness (trade as % of GDP)
 
@@ -282,23 +284,26 @@ final_df <- cbind(identifiers, imputed_df)
 print(describe(final_df), n = 26)
 ```
 
+As can be seen now there are no more missing values. All my variables are percentages, but they are percentages of different things (as explained when describing the data) and they can operate on different scales. For instance `trade_openess` is trade as a % of GDP, but it can and sometimes it takes values above 100%. The same can happen for `public_debt`. `trade_balance` instead can take negative values.
 
+Here is where I decide whether I need to scale my variables or not... TBW...
 
-```{r, fig.height=25}
-#explore::explore_tbl(reduced_df)
-
-#Plots distribution with the mean
-reduced_df |> 
+```{r, fig.height=20}
+#Plotting distribution with the mean
+final_df |> 
   select(- c("country_name", "country_code")) |> 
-  explore::explore_all()
+  explore_all()
 ```
 
-```{r, fig.height=35}
-GGally::ggcorr(reduced_df)
-PerformanceAnalytics::chart.Correlation(reduced_df |> select(-c("country_name", "country_code")))
+From the plots of the distributions of my variables I can see that most of them are right skewed, with many countries having values close to zero and long right tails. A partial exception to this are the variables `trade_balance` (because of its negative values) and `female_labor_participation` which exhibit partial left-skewness. More balanced are the distributions of `industry_%gdp`, `services_%gdp` and `travel_services_exports`, while `manufactures_exports` shows an interesting bimodal distribution.
+
+```{r, fig.height=7, warning=FALSE}
+final_df |> 
+  select(- c("country_name", "country_code")) |> 
+  cor() |> 
+  corrplot(method = 'square', order = 'FPC', type = 'lower', diag = FALSE, tl.col = 'black')
 ```
 
-```{r, fig.height=10}
-PerformanceAnalytics::chart.Boxplot(reduced_df |> select(-c("country_name", "country_code")))
-```
+Lastly I plot a correlation matrix from which it can be seen that there are some strong correlations, as well as numerous weak ones. For example having a high share of GDP coming from the primary sector (`agriculture_%gdp`) is negatively correlated with having a problem of an aging population (`age_dependency`), while it is positively correlated with receiving a lot of ODA (`foreign_aid`). 
+
 
