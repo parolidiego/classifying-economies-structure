@@ -5,20 +5,24 @@ output: html_document
 
 ## Objective
 
-
+TBW...
 
 ## Load libraries
 
-```{r}
+```{r, message=FALSE}
 rm(list = ls())
 #install.packages("tidyverse")
 #install.packages("DataExplorer")
 #install.packages("mice")
+#install.packages("ggplot2")
+#install.packages("RColorBrewer")
+#install.packages("explore")
 library(tidyverse)
 library(DataExplorer)
 library(mice)
 library(ggplot2)
 library(RColorBrewer)
+library(explore)
 ```
 
 ## Read the data
@@ -39,7 +43,7 @@ The dataset includes:
 
 -   Unemployment (as a % of total labor force)
 
--   Youth unemployment (as a % of labor force 15-24)
+-   Youth unemployment (as a % of labor force 15-24 y.o.)
 
 -   Net ODA received (as a % of GNI) to capture reliance on foreign aid
 
@@ -63,9 +67,10 @@ I downloaded data for years 2015 to 2019 so that by averaging over those years I
 
 ```{r}
 raw_data <- read_csv("WDI_data.csv", show_col_types = FALSE)
+head(raw_data)
 ```
 
-Data can also be obtained the following way, but we would need to subset just the countries, as by running `country = "all"` we obtain data for subnational geographical entities as well (ex. Africa Eastern and Southern)
+Data can also be obtained the following way, directly from R by talking to the World Bank's API. If downloaded this way we would need to subsequently subset the dataframe, obtaining just the countries, as by running `WDI(country = "all"...)` we obtain data also for subnational geographical entities (ex. Africa Eastern and Southern etc.).
 
 ```{r}
 # indicators_list <- raw_data |>
@@ -73,7 +78,7 @@ Data can also be obtained the following way, but we would need to subset just th
 #   drop_na() |>
 #   pull(`Series Code`) 
 # library(WDI)
-# df = WDI(country = "all", indicator = indicators_list, start = 2015, end = 2019) 
+# df = WDI(country = "all", indicator = indicators_list, start = 2015, end = 2019, extra = TRUE) 
 ```
 
 ## Cleaning and pre-processing
@@ -127,23 +132,20 @@ colnames(data) <- c(
 str(data)
 ```
 
-```{r}
+```{r, fig.height=7}
 # Check correlation
 plot_correlation(data, type = "continuous", cor_args = list("use" = "pairwise.complete.obs"))
 ```
 
 I confirm that the variables appear to be correlated at least to a certain extent and that therefore are appropriate for this assignment.
 
-### Missing Data
+## Missing Data
 
 ```{r}
 plot_intro(data)
-plot_missing(data)
 ```
 
-I have a worrying number of missing data especially for the variables public debt and foreign aid
-
-But first let's check if there are some countries with a particularly high number of missing data
+First let's check if there are some countries with a particularly high number of missing data
 
 ```{r}
 # Constructing a dataset counting how many missing data each country has 
@@ -159,7 +161,7 @@ high_missing_countries <- missing_counts |>
 high_missing_countries
 ```
 
-These countries are either small island countries or countries with a very close authoritarian regime or countries ravaged by wars. Therefore due to the high percentage of missing data and their peculiarity I decide to get rid of them.
+All these countries are either small island countries or countries with a very close authoritarian regime or countries ravaged by wars. Therefore due to the high percentage of missing data and their peculiarity I decide to get rid of them.
 
 ```{r}
 # Getting rid of them
@@ -167,7 +169,15 @@ reduced_df <- data |>
   filter(!country_name %in% high_missing_countries)
 ```
 
-I now investigate more into the high percentage of missingness for the variable `foreign_aid`
+I now plot the percentage of missing observations by column to see if some columns have a particularly low number of data.
+
+```{r, fig.height=8}
+plot_missing(data)
+```
+
+There is a worrying number of missing data especially for the variables `public_debt` and `foreign_aid`.
+
+I now investigate more into the high percentage of missingness for the variable `foreign_aid`.
 
 ```{r}
 # Extracting the list of countries that report NAs for foreign aid
@@ -176,7 +186,7 @@ reduced_df |>
   pull(country_name)
 ```
 
-All those countries are high-income countries (sometimes even donor countries) that do not receive official development assistance therefore we can safely recode the NAs of these countries into zeros.
+All those countries are high-income countries (sometimes even donor countries) that do not receive official development assistance therefore I can safely recode these NAs into zeros.
 
 ```{r}
 # Recoding foreign_aid NAs
@@ -184,12 +194,16 @@ reduced_df <- reduced_df |>
   mutate(foreign_aid = ifelse(is.na(foreign_aid), 0, foreign_aid))
 ```
 
-Finally I will now focus on the imputation of the missing values for all variables, even for the column `public_debt` that although has a really high  number of missing values I consider quite important.
+Finally I will now focus on the imputation of missing values for all variables, even for the column `public_debt`, that although it has a really high  number of missing values, I consider quite important for the scope of my analysis.
+
+First I need to decide which imputation method to use. I take the variables with the most missing values (`public_debt` and `tourism_exports`) and impute them using several methods. By comparing the original distributions of these variables with those obtained through different imputation mechanisms I will select the "best" imputation algorithm and apply it throughout the whole dataset.
 
 ```{r, message=FALSE, warning=FALSE, results='hide'}
 # Dropping for the imputation country_code and country_name (identifier variables)
 numeric <- reduced_df |> 
   select(-c("country_name", "country_code"))
+identifiers <- reduced_df |> 
+  select(c("country_name", "country_code"))
 
 # Imputing public_debt with several methods
 imputed_public_debt <- data.frame(
@@ -212,7 +226,7 @@ imputed_tourism_exports <- data.frame(
   imputed_lasso.norm = complete(mice(numeric, m = 1, method = "lasso.norm", seed=123))$tourism_exports)
 ```
 
-I will now plot the obtain distributions to understand which method best resembles the original distribution
+I will now plot the obtained distributions to understand which method best resembles the original distribution.
 
 ```{r, warning=FALSE}
 # Plotting public_debt
@@ -226,7 +240,7 @@ colors_fill <- c(brewer.pal(6, "Set1"), "black")
 
 # Plot with faceting
 ggplot(imputed_long_public_debt, aes(x = Value, , fill = Method)) +
-  geom_histogram(bins = 15, alpha = 0.7, color = "black") +
+  geom_histogram(bins = 20, alpha = 0.7, color = "black") +
   facet_wrap(~Method, scales = "free_y") +
   scale_fill_manual(values = colors_fill) + 
   labs(title = "Comparison of Original and Imputed Distributions for Public Debt variable",
@@ -234,7 +248,6 @@ ggplot(imputed_long_public_debt, aes(x = Value, , fill = Method)) +
        y = "Count") +
   theme_minimal() +
   theme(legend.position = "none")
-
 
 
 # Plotting tourism exports
@@ -245,7 +258,7 @@ imputed_long_tourism <- imputed_tourism_exports %>%
 colors_fill <- c(brewer.pal(6, "Set1"), "black")
 
 ggplot(imputed_long_tourism, aes(x = Value, fill = Method)) +
-  geom_histogram(bins = 15, alpha = 0.7, color = "black") +
+  geom_histogram(bins = 20, alpha = 0.7, color = "black") +
   facet_wrap(~Method, scales = "free_y") +
   scale_fill_manual(values = colors_fill) + 
   labs(title = "Comparison of Original and Imputed Distributions for Tourism Exports Variable",
@@ -255,41 +268,33 @@ ggplot(imputed_long_tourism, aes(x = Value, fill = Method)) +
   theme(legend.position = "none") 
 ```
 
+For both `public_debt` and `tourism_exports` predictive mean matching seems to be the algorithm that best resembles the original distribution so I will use it to predict the missing values for all the variables in the dataset.
 
-```{r}
-######mc <- mice(reduced_df, m=1, method='rf', seed=123)
+```{r, results='hide', warning=FALSE}
+imputed_df <- complete(mice(numeric, m= 1, method = "pmm", seed=123))
+final_df <- cbind(identifiers, imputed_df)
 ```
 
 
 ## Descriptive analysis
 
 ```{r}
-explore::describe(reduced_df)
-GGally::ggcorr(reduced_df)
+print(describe(final_df), n = 26)
 ```
 
-
-```{r}
-# Calculating NAs, min, median, mean and max by indicator
-# data_summary <- data |> 
-#   summarise(NA_count = sum(is.na(value)), 
-#             min = round(min(value, na.rm = TRUE), 2), 
-#             median = round(median(value, na.rm = TRUE), 2), 
-#             mean = round(mean(value, na.rm = TRUE), 2), 
-#             max = round(max(value, na.rm = TRUE), 2))
-```
 
 
 ```{r, fig.height=25}
 #explore::explore_tbl(reduced_df)
 
-#mPlots distribution with the mean
+#Plots distribution with the mean
 reduced_df |> 
   select(- c("country_name", "country_code")) |> 
   explore::explore_all()
 ```
 
 ```{r, fig.height=35}
+GGally::ggcorr(reduced_df)
 PerformanceAnalytics::chart.Correlation(reduced_df |> select(-c("country_name", "country_code")))
 ```
 
