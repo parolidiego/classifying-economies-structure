@@ -19,6 +19,7 @@ rm(list = ls())
 #install.packages("explore")
 #install.packages("corrplot")
 #install.packages("factoextra")
+#install.packages("rworldmap")
 library(tidyverse)
 library(DataExplorer)
 library(mice)
@@ -27,6 +28,7 @@ library(RColorBrewer)
 library(explore)
 library(corrplot)
 library(factoextra)
+library(rworldmap)
 ```
 
 ## Read the data
@@ -104,6 +106,9 @@ data <- raw_data |>
   # Pivoting wider
   pivot_wider(names_from = "Series Name", values_from = "mean_value")
 
+# Extracting original variables names
+variables_df <- colnames(data)
+
 # Modifying column names
 colnames(data) <- c(
   "country_name",  
@@ -120,7 +125,7 @@ colnames(data) <- c(
   "foreign_aid",  
   "natural_resources_rents",  
   "tourism_exports",  
-  "agriculture_exports",  
+  "rawagrimaterial_exports",  
   "food_exports",  
   "fuel_exports",  
   "manufactures_exports",  
@@ -133,6 +138,12 @@ colnames(data) <- c(
   "migrant_population",  
   "age_dependency"
 )
+
+# Creating a dataframe with the new variable name and the original definition
+variables_df <- cbind(variables_df, colnames(data)) |> 
+  as.tibble() |> 
+  rename(original = variables_df, shortened = V2)
+
 str(data)
 ```
 
@@ -198,7 +209,7 @@ reduced_df <- reduced_df |>
   mutate(foreign_aid = ifelse(is.na(foreign_aid), 0, foreign_aid))
 ```
 
-Finally I will now focus on the imputation of missing values for all variables, even for the column `public_debt`, that although it has a really high  number of missing values, I consider quite important for the scope of my analysis.
+Finally I will now focus on the imputation of missing values for all variables, even for the column `public_debt`, that although it has a really high number of missing values, I consider important for the scope of my analysis.
 
 First I need to decide which imputation method to use. I take the variables with the most missing values (`public_debt` and `tourism_exports`) and impute them using several methods. By comparing the original distributions of these variables with those obtained through different imputation mechanisms I will select the "best" imputation algorithm and apply it throughout the whole dataset.
 
@@ -275,10 +286,10 @@ ggplot(imputed_long_tourism, aes(x = Value, fill = Method)) +
 For both `public_debt` and `tourism_exports` predictive mean matching seems to be the algorithm that best resembles the original distribution so I will use it to predict the missing values for all the variables in the dataset.
 
 ```{r, results='hide', warning=FALSE}
-imputed_df <- complete(mice(numeric, m= 1, method = "pmm", seed=123))
+# Imputing all missing observations
+imputed_df <- complete(mice(numeric, m = 1, method = "pmm", seed=123))
 final_df <- cbind(identifiers, imputed_df)
 ```
-
 
 ## Descriptive analysis
 
@@ -291,7 +302,7 @@ As can be seen now there are no more missing values. All my variables are percen
 Here is where I decide whether I need to scale my variables or not... TBW...
 
 ```{r, fig.height=20}
-#Plotting distribution with the mean
+# Plotting the distributions of the variables with their mean
 final_df |> 
   select(- c("country_name", "country_code")) |> 
   explore_all()
@@ -306,57 +317,72 @@ final_df |>
   corrplot(method = 'square', order = 'FPC', type = 'lower', diag = FALSE, tl.col = 'black')
 ```
 
-Lastly I plot a correlation matrix from which it can be seen that there are some strong correlations, as well as numerous weak ones. For example having a high share of GDP coming from the primary sector (`agriculture_%gdp`) is negatively correlated with having a problem of an aging population (`age_dependency`), while it is positively correlated with receiving a lot of ODA (`foreign_aid`). 
+Lastly I plot a correlation matrix from which it can be seen that there are some strong correlations, as well as numerous weak ones. For example having a high share of GDP coming from the primary sector (`agriculture_%gdp`) is negatively correlated with having a problem of an aging population (`age_dependency`), while it is positively correlated with receiving a lot of ODA (`foreign_aid`). This makes sense as rather undeveloped economies (relying a lot on the primary sector) are often likely to receive foreign aid and are often places where population is expanding rather than contracting and where life expectancy is not high, thus having a low age dependency ratio.
 
 ## Principal Component Analysis
 
 ```{r}
 pca = prcomp(imputed_df, scale = TRUE)
-pca
 ```
 
 As mentioned before, although all variables are percentages they are scaled to run principal components analysis to avoid the component weights being biased by the higher variance of some of the variables.
 
 ```{r}
 fviz_screeplot(pca, addlabels = TRUE)
-pca$rotation[,1]
+```
+
+As can be seen from the graph above the first principal component only explains about 18% of the variability of the data, the second one about 16%. The third and the forth component explain around 10% of the variability. This means that 4 components explain in total only around 55% of the variability, and it is still missing nearly one half of the information of my dataset . After the fifth component each component explain progressively less variance. It seems that the underlying structure of my data doesn't neatly reduce to a small number of dimensions, and it's instead highly multidimensional with no single or few patterns strongly dominating my dataset.
+
+#### First principal component
+
+```{r}
+# Plotting each variable relative importance to PC1
 fviz_contrib(pca, choice = "var", axes = 1)
 
 # Convert PCA rotation values into a dataframe
-pca_df <- data.frame(Variable = rownames(pca$rotation), 
-                     PC1 = pca$rotation[,1])
-
-# Create the barplot with rotated labels
-ggplot(pca_df, aes(x = reorder(Variable, PC1), y = PC1)) +
+pca1_df <- data.frame(variable = rownames(pca$rotation), 
+                      PC1 = pca$rotation[,1])
+# Create a barplot with rotated labels
+ggplot(pca1_df, aes(x = reorder(variable, PC1), y = PC1)) +
   geom_bar(stat = "identity", fill = "darkblue") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  labs(x = "Variables", y = "PC1 Loadings", title = "PCA Loadings for PC1")
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank()) + 
+  ylim(-0.5, 0.5) +
+  labs(x = "Variables", 
+       y = "PC1 Loadings", 
+       title = "PCA Loadings for the First Prinicpial Component")
+```
 
+The first principal component is already quite hard to interpret. However it seems to reflect what we would consider developed economies, with strong service sectors, integrated in the global market (open economies) a positive trade balance, exporting manufactured goods rather than raw materials. On the contrary those countries do not rely on the primary sector a lot and have a problem of an ageing population.
 
+```{r}
+# Printing the bottom 10 countries for PC1
 identifiers$country_name[order(pca$x[,1])][1:10]
+# Printing the top 10 countries for PC1
 identifiers$country_name[order(pca$x[,1], decreasing=T)][1:10]
+```
 
-data.frame(z1=pca$x[,1],z2=pca$x[,2]) |> 
-  ggplot(aes(z1,z2,label=identifiers$country_name)) + 
-  geom_point(size=0) +
-  labs(title="First two principal components (scores)", x="PC1", y="PC2") + #guides(color=guide_legend(title="HDI"))+
-  theme_bw() +theme(legend.position="bottom") + geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE) 
+This seems to be confirmed when we print the "best" and the "worst" countries relative to the first principal component. The top countries are all small developed countries integrated in the global market in terms of trade and with an old population. The worst countries instead are poor countries relying on foreign aid, the agricultural sector or exploiting natural resources.
 
-# Map our PCA index in a map:
-map = data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=pca$x[,1])
-# #Convert the country code into iso3c using the function countrycode()
-# map$country = countrycode(map$country, 'country.name', 'iso3c')
+To conclude, the main interpretation for PC1 seems to be a score of how open, developed and service oriented an economy is and how severe is the problem of an aging population.
+
+```{r, results='hide'}
+# Map our PCA1 index in a map. Start by creating a df containing the PC1 score
+map <- data.frame(country = identifiers$country_name,
+                  country_code = identifiers$country_code, 
+                  value=pca$x[,1])
 #Create data object supporting the map
-library(rworldmap)
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
+```
+```{r, dpi=500, out.width="200%"}
 #Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
-               numCats = 6,
+               numCats = 4,
                missingCountryCol="white",
-               addLegend = FALSE, # or true?
+               addLegend = TRUE,
                borderCol = "black",
                catMethod = "diverging", 
                colourPalette = "diverging",
@@ -365,9 +391,173 @@ mapCountryData(mapToPlot=matched,
                oceanCol="lightblue")
 ```
 
+The map confirms my intuition. The first principal component is both an index of development, but also of openness and integration with the world markets of an economy, as well as an index of how worrying is the ageing problem of the population. This is why the U.S.A, are not in red unlike most of Europe and Japan.
+
+#### Second principal component
+
+```{r}
+# Plotting each variable relative importance to PC2
+fviz_contrib(pca, choice = "var", axes = 2)
+
+# Convert PCA rotation values into a dataframe
+pca2_df <- data.frame(variable = rownames(pca$rotation), 
+                      PC2 = pca$rotation[,2])
+# Create a barplot with rotated labels
+ggplot(pca2_df, aes(x = reorder(variable, PC2), y = PC2)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank()) + 
+  ylim(-0.5, 0.5) +
+  labs(x = "Variables", 
+       y = "PC2 Loadings", 
+       title = "PCA Loadings for the Second Prinicpial Component")
+```
+
+The second principal component seems to reflect countries with very few industries, still reliant on the tertiary sector, but especially because of tourism and therefore not necessarily developed economies (foreign aid is quite high and more sophisticated goods are not exported).
+
+```{r}
+# Printing the bottom 10 countries for PC2
+identifiers$country_name[order(pca$x[,2])][1:10]
+# Printing the top 10 countries for PC2
+identifiers$country_name[order(pca$x[,2], decreasing=T)][1:10]
+```
+
+The bottom countries for the second principal component are mainly oil or gas producer countries as the component places negative emphasis on the exports of fuel related products and on the importance of natural resources rents. The top countries on the other hand are basically always small islands, not necessarily rich, but that rely almost solely on tourism (their economy is not very diversified). A quite puzzling and unexplainable presence is Syria which is ranked as one of the best countries in terms of PC2.
+
+Apart from Syria the interpretation of PC2 seems more straightforward than PC1 and seems to be a score of how reliant a country is on tourism.
+
+```{r, results='hide'}
+# Map our PCA2 index in a map. Start by creating a df containing the PC2 score
+map <- data.frame(country = identifiers$country_name,
+                  country_code = identifiers$country_code, 
+                  value=pca$x[,2])
+#Create data object supporting the map
+matched <- joinCountryData2Map(map, joinCode = "ISO3",
+                               nameJoinColumn = "country_code")
+```
+```{r, dpi=500, out.width="200%"}
+#Draw the map
+mapCountryData(mapToPlot=matched,
+               nameColumnToPlot="value",
+               numCats = 4,
+               missingCountryCol="white",
+               addLegend = TRUE,
+               borderCol = "black",
+               catMethod = "diverging", 
+               colourPalette = "diverging",
+               mapTitle = c("PCA2"), 
+               lwd=0.5,
+               oceanCol="lightblue")
+```
+
+The map does not do justice to this second principal component because its top countries are small island that cannot be seen very well. However, we can notice how mediterranean countries that rely on tourism more than their neighbors have a higher score than Northern Europe.
+
+#### Third principal component
+
+```{r}
+# Plotting each variable relative importance to PC3
+fviz_contrib(pca, choice = "var", axes = 3)
+
+# Convert PCA rotation values into a dataframe
+pca3_df <- data.frame(variable = rownames(pca$rotation), 
+                      PC3 = pca$rotation[,3])
+# Create a barplot with rotated labels
+ggplot(pca3_df, aes(x = reorder(variable, PC3), y = PC3)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank()) + 
+  ylim(-0.5, 0.5) +
+  labs(x = "Variables", 
+       y = "PC3 Loadings", 
+       title = "PCA Loadings for the Third Prinicpial Component")
+```
+
+The third principal component places a lot of negative weight to unemployment levels which are basically the most defining factor of this component. It also places a positive importance to female labour participation. These countries however also seem to have a relatively undeveloped economy relying mainly on agriculture and are not oil producing countries.
+
+```{r}
+# Printing the bottom 10 countries for PC3
+identifiers$country_name[order(pca$x[,3])][1:10]
+# Printing the top 10 countries for PC3
+identifiers$country_name[order(pca$x[,3], decreasing=T)][1:10]
+```
+
+Although some countries might be unexpected the list of the top and worse countries is coherent with the definition of the third principal component. All the top countries are countries with very low level of unemployment, while the worst countries have high level of unemployment and often are oil producing countries.
+
+#### Fourth principal component
+
+```{r}
+# Plotting each variable relative importance to PC4
+fviz_contrib(pca, choice = "var", axes = 4)
+
+# Convert PCA rotation values into a dataframe
+pca4_df <- data.frame(variable = rownames(pca$rotation), 
+                      PC4 = pca$rotation[,4])
+# Create a barplot with rotated labels
+ggplot(pca4_df, aes(x = reorder(variable, PC4), y = PC4)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank()) + 
+  ylim(-0.5, 0.5) +
+  labs(x = "Variables", 
+       y = "PC2 Loadings", 
+       title = "PCA Loadings for the Second Prinicpial Component")
+```
+
+The fourth component places strong negative emphasis on the percentage of foreigners in the population, while placing strong positive emphasis on manufactures exports and ict related service exports. Unemployment in such countries is quite high.
+
+```{r}
+# Printing the bottom 10 countries for PC4
+identifiers$country_name[order(pca$x[,4])][1:10]
+# Printing the top 10 countries for PC4
+identifiers$country_name[order(pca$x[,4], decreasing=T)][1:10]
+```
+
+The list of the top and bottom countries in terms of PC4 helps us understanding it better. The bottom countries are countries that are attractive for foreign workers (gulf countries or small European countries such as Luxembourg and Andorra). The top countries instead are countries that do not attract migrants (wages are generally low) and their economy is developing. Still while to the first three components it could be assigned a general meaning for this last one it is more difficult.
+
+#### Summary
+
+As the interpretation of the fourth component becomes more difficult and the relative importance of the successive components decreases below 10% of the variability I choose to stop there.
+
+To recap
+
+1.  First principal component seems a score of how developed and integrated an economy is, as well as the gravity of an ageing population
+
+2.  Second component seems a score of how reliant on tourism an economy is vs how reliant a country is on oil exports
+
+3.  Third component seems a to mainly reflect unemployment levels in the countries
+
+4.  Fourth component seems to reflect how attractive to foreign workers a country is, but the interpretation becomes more difficult
+
+```{r}
+# First vs second PC
+data.frame(z1=pca$x[,1], z2=pca$x[,2]) |> 
+  ggplot(aes(z1, z2, label=identifiers$country_name)) + 
+  geom_point(size=0) +
+  labs(title="First two principal components (scores)", x="PC1", y="PC2") +
+  theme_bw() +
+  theme(legend.position="bottom") + 
+  geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE) 
+```
+
+```{r}
+# First vs third PC
+data.frame(z1=pca$x[,1], z3=pca$x[,3]) |> 
+  ggplot(aes(z1, z3, label=identifiers$country_name)) + 
+  geom_point(size=0) +
+  labs(title="First and third principal components (scores)", x="PC1", y="PC3") +
+  theme_bw() +
+  theme(legend.position="bottom") + 
+  geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE) 
+```
+
 ## Clustering
 
 ### K-Means
+
+First let's try to determine the optimal number of clusters using different methods.
 
 ```{r, fig.height=10}
 fviz_nbclust(scale(imputed_df), kmeans, method = 'wss', k.max = 10, nstart = 1000)
@@ -482,4 +672,3 @@ mapCountryData(mapToPlot=matched,
                lwd=0.5,
                oceanCol="lightblue")
 ```
-
