@@ -1,16 +1,31 @@
 ---
-title: "Assignment I"
-output: html_document
+title: "Clustering economic structures"
+author: "Diego Paroli"
+output: 
+  prettydoc::html_pretty:
+    theme: architect
+    toc: yes
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dpi = 700, out.width = "100%")
+```
 
 ## Objective
 
-TBW...
+This notebook aims to categorize each country's economic structure through the use of unsupervised machine learning methods. Its main purpose is to try to find relevant patterns among different countries' economic structures to see if some of the world's economies share major characteristics.
+
+We live in an unpredictable economic landscape with continuous threats of trade wars, worries of supply chain disruption, deindustrialization and the problem of an ageing population in most of Europe. For this reason I tried to pick as many indicators as possible to characterize a country's economic structure and other indicators trying to capture many of the most relevant and talked about economic problems. Among them the ageing population problem, female labor participation and the importance of migrant workers. With all this data I have run PCA and clustering and, by examining their results of sectoral value-added contributions, trade balance, trade openness, overreliance on particular sectors or exports etc., I have seeked to identify patterns and differences in economic composition.
+
+The aim is not to split the countries into high or low income countries, but more about understanding if there are other patterns in the economic structures of many different countries in the world and if it is possible to classify (cluster) those similar economies together. For this reason no measure of GDP has been used and all the variables are in percentage terms.
+
+I choose to look at the 2015-2019 period. This is a fairly recent period and excludes all the economic turmoil cause by the Covid pandemic which would have probably induced very different and less representative results.
 
 ## Load libraries
 
 ```{r, message=FALSE}
 rm(list = ls())
+#install.packages("prettydoc") #to knit
 #install.packages("tidyverse")
 #install.packages("DataExplorer")
 #install.packages("mice")
@@ -84,11 +99,14 @@ Data can also be obtained the following way, directly from R by talking to the W
 
 ```{r}
 # indicators_list <- raw_data |>
-#   distinct(`Series Code`) |> 
+#   distinct(`Series Code`) |>
 #   drop_na() |>
-#   pull(`Series Code`) 
+#   pull(`Series Code`)
 # library(WDI)
-# df = WDI(country = "all", indicator = indicators_list, start = 2015, end = 2019, extra = TRUE) 
+# df = WDI(country = "all", 
+#          indicator = indicators_list, 
+#          start = 2015, end = 2019, 
+#          extra = TRUE)
 ```
 
 ## Cleaning and pre-processing
@@ -227,22 +245,70 @@ identifiers <- reduced_df |>
 # Imputing public_debt with several methods
 imputed_public_debt <- data.frame(
   original = numeric$public_debt,
-  imputed_pmm = complete(mice(numeric, m= 1, method = "pmm", seed=123))$public_debt,
-  imputed_cart = complete(mice(numeric, m = 1, method = "cart", seed=123))$public_debt,
-  imputed_rf = complete(mice(numeric, m = 1, method = "rf", seed=123))$public_debt,
-  imputed_norm = complete(mice(numeric, m = 1, method = "norm", seed=123))$public_debt,
-  imputed_norm.boot = complete(mice(numeric, m = 1, method = "norm.boot", seed=123))$public_debt,
-  imputed_lasso.norm = complete(mice(numeric, m = 1, method = "lasso.norm", seed=123))$public_debt)
+  imputed_pmm = complete(mice(numeric, 
+                              m= 1, 
+                              method = "pmm", 
+                              seed=123)
+                         )$public_debt,
+  imputed_cart = complete(mice(numeric, 
+                               m = 1, 
+                               method = "cart", 
+                               seed=123)
+                          )$public_debt,
+  imputed_rf = complete(mice(numeric, 
+                             m = 1, 
+                             method = "rf", 
+                             seed=123)
+                        )$public_debt,
+  imputed_norm = complete(mice(numeric, 
+                               m = 1, 
+                               method = "norm", 
+                               seed=123)
+                          )$public_debt,
+  imputed_norm.boot = complete(mice(numeric, 
+                                    m = 1, 
+                                    method = "norm.boot", 
+                                    seed=123)
+                               )$public_debt,
+  imputed_lasso.norm = complete(mice(numeric, 
+                                     m = 1, 
+                                     method = "lasso.norm", 
+                                     seed=123)
+                                )$public_debt)
 
 # Imputing tourism exports with several methods
 imputed_tourism_exports <- data.frame(
   original = numeric$tourism_exports,
-  imputed_pmm = complete(mice(numeric, m= 1, method = "pmm", seed=123))$tourism_exports,
-  imputed_cart = complete(mice(numeric, m = 1, method = "cart", seed=123))$tourism_exports,
-  imputed_rf = complete(mice(numeric, m = 1, method = "rf", seed=123))$tourism_exports,
-  imputed_norm = complete(mice(numeric, m = 1, method = "norm", seed=123))$tourism_exports,
-  imputed_norm.boot = complete(mice(numeric, m = 1, method = "norm.boot", seed=123))$tourism_exports,
-  imputed_lasso.norm = complete(mice(numeric, m = 1, method = "lasso.norm", seed=123))$tourism_exports)
+  imputed_pmm = complete(mice(numeric, 
+                              m= 1, 
+                              method = "pmm", 
+                              seed=123)
+                         )$tourism_exports,
+  imputed_cart = complete(mice(numeric, 
+                               m = 1, 
+                               method = "cart", 
+                               seed=123)
+                          )$tourism_exports,
+  imputed_rf = complete(mice(numeric, 
+                             m = 1, 
+                             method = "rf", 
+                             seed=123)
+                        )$tourism_exports,
+  imputed_norm = complete(mice(numeric, 
+                               m = 1, 
+                               method = "norm", 
+                               seed=123)
+                          )$tourism_exports,
+  imputed_norm.boot = complete(mice(numeric, 
+                                    m = 1, 
+                                    method = "norm.boot", 
+                                    seed=123)
+                               )$tourism_exports,
+  imputed_lasso.norm = complete(mice(numeric, 
+                                     m = 1, 
+                                     method = "lasso.norm",
+                                     seed=123)
+                                )$tourism_exports)
 ```
 
 I will now plot the obtained distributions to understand which method best resembles the original distribution.
@@ -301,9 +367,7 @@ final_df <- cbind(identifiers, imputed_df)
 print(describe(final_df), n = 26)
 ```
 
-As can be seen now there are no more missing values. All my variables are percentages, but they are percentages of different things (as explained when describing the data) and they can operate on different scales. For instance `trade_openess` is trade as a % of GDP, but it can and sometimes it takes values above 100%. The same can happen for `public_debt`. `trade_balance` instead can take negative values.
-
-Here is where I decide whether I need to scale my variables or not... TBW...
+As can be seen now there are no more missing values. All my variables are percentages, but they are percentages of different things (as explained when describing the data) and they can operate on different scales. For instance `trade_openess` is trade as a % of GDP, but it can and sometimes it takes values above 100%. The same can happen for `public_debt`. `trade_balance` instead can take negative values. This is why I will still choose to scale my variables when running PCA.
 
 ```{r, fig.height=20}
 # Plotting the distributions of the variables with their mean
@@ -380,7 +444,8 @@ map <- data.frame(country = identifiers$country_name,
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
 ```
-```{r, dpi=500, out.width="100%"}
+
+```{r}
 #Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
@@ -443,7 +508,7 @@ matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
 ```
 
-```{r, dpi=500, out.width="100%"}
+```{r}
 #Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
@@ -528,15 +593,15 @@ The list of the top and bottom countries in terms of PC4 helps us understanding 
 
 As the interpretation of the fourth component becomes more difficult and the relative importance of the successive components decreases below 10% of the variability I choose to stop there.
 
-To recap
+To recap:
 
-1.  First principal component seems a score of how developed and integrated an economy is, as well as the gravity of an ageing population
+1.  First principal component seems a score of how developed and integrated an economy is, as well as the gravity of the ageing population problem.
 
-2.  Second component seems a score of how reliant on tourism an economy is vs how reliant a country is on oil exports
+2.  Second component seems a score of how reliant on tourism an economy is vs how reliant a country is on oil exports.
 
-3.  Third component seems a to mainly reflect unemployment levels in the countries
+3.  Third component seems to mainly reflect unemployment levels in the countries.
 
-4.  Fourth component seems to reflect how attractive to foreign workers a country is, but the interpretation becomes more difficult
+4.  Fourth component seems to reflect how attractive to foreign workers a country is, but the interpretation becomes more difficult.
 
 ```{r}
 # First vs second PC
@@ -569,7 +634,8 @@ First let's try to determine the optimal number of clusters using different meth
 ```{r, warning=FALSE}
 fviz_nbclust(scale(imputed_df), kmeans, method = 'wss', k.max = 10, nstart = 1000)
 fviz_nbclust(scale(imputed_df), kmeans, method = 'silhouette', k.max = 10, nstart = 1000)
-fviz_nbclust(scale(imputed_df), kmeans, method = 'gap_stat', k.max = 10, nstart = 100, nboot = 100, verbose = FALSE)
+fviz_nbclust(scale(imputed_df), kmeans, method = 'gap_stat', k.max = 10, 
+             nstart = 100, nboot = 100, verbose = FALSE)
 ```
 
 As we can see the `wss` method is not really helpful as it does not show any sudden flattening of the curve. The curve only progressively flattens without giving us any clear hint to the optimal number of clusters.
@@ -614,26 +680,28 @@ ggplot(centers_df, aes(x = reorder_within(Variable, Value, Cluster),
         panel.grid.minor = element_blank())
 ```
 
--   Cluster 1 seems to be incorporating countries where `age_dependency` is quite high and agriculture has a relatively unimportant contribution to gdp (`agriculture_%gdp`). It is difficult to define these countries precisely, but they are likely to be developed diversified economies (`foreign_aid` is low, `female_labor_participation` is high), that integrated in the global markets and do not rely on natural resources too much
--   Cluster 2 seems to be grouping a particular type of countries that place high importance on the export of agricultural raw materials (`rawagrimaterial_exports`). The interpretation of this cluster is difficult, but it should also be noted that very few (probably quite peculiar) countries are part of it
--   Cluster 3 seems to capture countries that rely either on the primary sector through `food_exports` or on the tertiary sector through `tourism_exports`. However these countries are likely not to be high income countries: `foreign_aid` is high and their secondary sector is rather undeveloped (`industry_%gdp`) eventually suffering a trade deficit (`trade_balance`). These countries are probably small islands  
--   Cluster 4 seems to mainly be characterized by high levels of unemployment, (`unemployment_total`, `unemployment_young`). These countries however are likely to quite developed and place a lot of importance on the tourism sector (`tourism_exports`)
--   Cluster 5 seems to group countries that rely on `natural_resources_rents` (and `fuel_exports`). The fact that `migrant_population` is high makes me guess that these countries are Gulf countries.
--   Cluster 6 seems to be made up of countries with a developed economy and that are attractive to a foreigners (`migrant_population`). For these countries the tertiary sector is really important (`services_%gdp`) and they are usually really integrated and open economies (`trade_openess` and `trade_balance`). These are probably mainly small, high-income countries, often being global financial centers as well (`finance_services_exports`) 
+-   Cluster 1 seems to be incorporating countries where `age_dependency` is quite high and agriculture has a relatively unimportant contribution to gdp (`agriculture_%gdp`). It is difficult to define these countries precisely, but they are likely to be developed diversified economies (`foreign_aid` is low, `female_labor_participation` is high), that are well integrated in the global markets and do not rely on natural resources too much
+-   Cluster 2 seems to be grouping a particular type of countries that place high importance on the export of agricultural raw materials (`rawagrimaterial_exports`). The interpretation of this cluster is difficult, but it should also be noted that very few (and probably quite peculiar) countries are part of it
+-   Cluster 3 seems to capture countries that rely either on the primary sector through `food_exports` or on the tertiary sector through `tourism_exports`. However these countries are likely not to be high income countries: `foreign_aid` is high and their secondary sector is rather undeveloped (`industry_%gdp`) eventually suffering a trade deficit (`trade_balance`). These countries are probably small islands\
+-   Cluster 4 seems to mainly be characterized by high levels of unemployment, (`unemployment_total`, `unemployment_young`). These countries however are likely to be quite developed and place a lot of importance on the tourism sector (`tourism_exports`)
+-   Cluster 5 seems to group countries that rely on `natural_resources_rents` (and `fuel_exports`). The fact that `migrant_population` is high makes me guess that these countries are Gulf countries
+-   Cluster 6 seems to be made up of countries with a developed economy and that are attractive to a foreigners (`migrant_population`). For these countries the tertiary sector is really important (`services_%gdp`) and they are usually really integrated and open economies (`trade_openess` and `trade_balance`). These are probably mainly small, high-income countries, often being global financial centers as well (`finance_services_exports`)
 -   Cluster 7 does not place a lot of emphasis on any of the variables present. However, they are mainly agricultural economies (`agriculture_%gdp`) rather than service economies (`services_%gdp`). As `age_dependency` is low and `foreign_aid` is high, these countries are likely to be low-income countries probably located mainly in Africa
 
 Let's try to understand better which countries form each cluster by using a map and a clusplot.
 
 ```{r, results='hide'}
 # Plotting k-means clustering in a map
-map <- data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=fit$cluster)
+map <- data.frame(country=identifiers$country_name,
+                  country_code=identifiers$country_code, 
+                  value=fit$cluster)
 
 #Create data object supporting the map
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
 ```
 
-```{r, warning=FALSE, out.width="100%", dpi=500}
+```{r, warning=FALSE}
 #Drawing the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
@@ -648,9 +716,11 @@ mapCountryData(mapToPlot=matched,
                oceanCol="lightblue")
 
 #Drawing a clusplot
-fviz_cluster(fit, data = imputed_df, geom = c("point"), ellipse.type = 'norm', pointsize = 0.05) +
+fviz_cluster(fit, data = imputed_df, geom = c("point"), 
+             ellipse.type = 'norm', pointsize = 0.05) +
   theme_minimal() +
-  geom_text(label = identifiers$country_name, hjust = 0, vjust = 0,size = 2,check_overlap = TRUE) +
+  geom_text(label = identifiers$country_name, hjust = 0, vjust = 0,
+            size = 2,check_overlap = TRUE) +
   scale_color_brewer(palette = "Set1") +
   scale_fill_brewer(palette = "Set1")
 ```
@@ -665,7 +735,7 @@ From the map it can be seen that cluster 1 is formed by basically all the high a
 
 It is really difficult to individuate cluster 2 countries, therefore I have decided to print them directly. These are a very small and peculiar group for which it is difficult to give a final explanation.
 
-Cluster 3 countries are the ones with the highest score for PC2 (score of how reliant on tourism an economy is), but that are not very rich countries. These are again mainly small island countries (from the map it is very difficult to see them because of this). 
+Cluster 3 countries are the ones with the highest score for PC2 (score of how reliant on tourism an economy is), but that are not very rich countries. These are again mainly small island countries (from the map it is very difficult to see them because of this).
 
 Cluster 4 countries are mainly mediterranean countries that rely on tourism, but where unemployment is quite high plus some relatively developed countries in the South of Africa.
 
@@ -677,7 +747,7 @@ Finally, cluster 7 seems to incorporate all the remaining middle and low income 
 
 ### Hierarchical
 
-Even for hierarchical clustering I will group the world's economies into 7 clusters for consistency for what has been done above.
+Even for hierarchical clustering I will group the world's economies into 7 clusters for consistency with what has been done above.
 
 ```{r, warning=FALSE, fig.width=15}
 # Compute the Euclidean distance matrix using the scaled data
@@ -714,7 +784,7 @@ The last group on the right is made up of small states that often are islands.
 
 Let's see another visualization as well:
 
-```{r, warning=FALSE, out.width="100%", dpi=300}
+```{r, warning=FALSE}
 # Drawing a phylogenic tree
 fviz_dend(x = hc,
           k = 7,
@@ -735,12 +805,15 @@ And finally plot it on a map:
 groups.hc = cutree(hc, k = 7)
 
 # Map the hierarchical cluster into a map
-map <- data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=groups.hc)
+map <- data.frame(country=identifiers$country_name,
+                  country_code=identifiers$country_code, 
+                  value=groups.hc)
 # Create data object supporting the map
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
 ```
-```{r, dpi=500, out.width="100%"}
+
+```{r}
 # Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
@@ -755,15 +828,34 @@ mapCountryData(mapToPlot=matched,
                oceanCol="lightblue")
 ```
 
-The map allows us to understand better the red cluster. Since the group is composed also by Greece and Spain this suggests that this group is again made of countries that rely heavily on tourism. Most of the rest of the countries of this group are small island countries which cannot be noticed in the plot. I was getting a similar cluster also through k-means clustering.
+The map allows us to understand better the cluster of touristic countries (red in the map). Since the group is composed also by Greece and Spain this suggests that this group is again made of countries that rely heavily on tourism. Most of the rest of the countries of this group are small island countries which cannot be noticed in the plot. I was getting a similar cluster also through k-means clustering.
 
-The green cluster (oil producing countries) is very similar to the one I was obtaining using k-means clustering. 
+The green cluster (oil producing countries) is very similar to the one I was obtaining using k-means clustering.
 
 As mentioned before there is also the exact same strange cluster made up of Solomon Islands, Benin and Liberia as it was in k means clustering.
 
-One difference with k-means clustering is that in it, I was getting a big cluster composed of almost all the high and middle income countries, while here most of the high income countries are in the brown cluster, while middle-income countries are divided into the purple and the orange cluster. This also allows us to speculate more on the characteristics of the brown cluster. It is interesting to note that Australia and New Zealand are left out of the cluster containing most Western countries.
+One difference with k-means clustering is that with it, I was getting a big cluster composed of almost all the high and middle income countries, while here most of the high income countries are in the brown cluster, while middle-income countries are divided into the purple and the orange cluster. This also allows us to speculate more on the characteristics of the brown cluster. It is interesting to note that Australia and New Zealand are left out of the cluster containing most Western countries.
 
 Finally the cluster of poor countries (blue) is composed of less units than before in k-means clustering. Therefore the countries in this cluster are the ones that really have some of the worst economic situations in the world.
 
 ## Conclusions
 
+There are some recurrent patterns and groups of countries throughout my analysis with PCA, k-means clustering and hierarchical clustering. Reported below are the most relevant groups/patterns of economic structure:
+
+-   The algorithms often group or score together gulf countries and other oil/gas producer countries, indicating that relying solely (or primarily) on these natural resources is a recurring economic structure that many countries adopt. A usual characteristic of such state is also often reliance on foreign workers (this is probably especially true for gulf countries).
+
+-   The algorithms also often group or score together countries that rely heavily on tourism. These are most often middle-income small islands countries where tourism is the main economic activity. Often, however, also mediterranean countries are part of this group. This probably happens because such countries based a good portion of their economy on tourism, but also because they have quite high levels of unemployment like small island countries. This group of countries suggests us that relying heavily on tourism is another very popular economic structure (sometimes forced, other times less forced).
+
+-   The algorithms also often group or score together small states in general. This is because, being small, all these states have to rely on trade a lot for many aspects of their economy.
+
+    -   A particular group of such states that often comes up is that of high-income financial centers that often attract foreign people because of high wages or low taxes (example: Luxembourg, Hong-Kong, Ireland, Andorra...).
+
+-   Finally the algorithms often cluster into different income levels all the remaining countries that do not have a single defining trait. Even though no measure of GDP is introduced, the level of income of a country can be understood thanks to other variables such as foreign aid and the age dependecy ratio, which is a problem strictly only in rich countries. The difference in the value added of different sectors is another variable that helps differentiate income levels. Poorer countries tend to be more agricultural, while richer economies tend to be more diversified with a greater importance of the tertiary sector. It is worth noting how the PCA and clustering are able to understand this and reflect it arriving at results that well reflect income disparities within the world's economies
+
+Overall, one final consideration must also be made. The dataset I constructed seemed to incorporate a lot of variability and no single principal component was able to explain a significant portion of it. Additionally, the number of clusters required to achieve meaningful results was quite large. These two factors indicate that, while some economies share key characteristics, the global economic systems remain highly diverse and it is challenging to assimilate many of them.
+
+It is also worth noting that I had to impute a consistent amount of missing data which could have easily hindered my analysis.
+
+## Focus on Europe
+
+To be written...
