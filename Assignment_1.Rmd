@@ -20,6 +20,8 @@ rm(list = ls())
 #install.packages("corrplot")
 #install.packages("factoextra")
 #install.packages("rworldmap")
+#install.packages("tidytext")
+#install.packages("ggsci")
 library(tidyverse)
 library(DataExplorer)
 library(mice)
@@ -29,6 +31,8 @@ library(explore)
 library(corrplot)
 library(factoextra)
 library(rworldmap)
+library(tidytext)
+library(ggsci)
 ```
 
 ## Read the data
@@ -376,7 +380,7 @@ map <- data.frame(country = identifiers$country_name,
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
 ```
-```{r, dpi=500, out.width="200%"}
+```{r, dpi=500, out.width="100%"}
 #Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
@@ -390,6 +394,8 @@ mapCountryData(mapToPlot=matched,
                lwd=0.5,
                oceanCol="lightblue")
 ```
+
+Note that countries in white are those countries that I have deleted and for which therefore there is no data in my dataframe.
 
 The map confirms my intuition. The first principal component is both an index of development, but also of openness and integration with the world markets of an economy, as well as an index of how worrying is the ageing problem of the population. This is why the U.S.A, are not in red unlike most of Europe and Japan.
 
@@ -436,7 +442,8 @@ map <- data.frame(country = identifiers$country_name,
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
 ```
-```{r, dpi=500, out.width="200%"}
+
+```{r, dpi=500, out.width="100%"}
 #Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
@@ -503,7 +510,7 @@ ggplot(pca4_df, aes(x = reorder(variable, PC4), y = PC4)) +
   ylim(-0.5, 0.5) +
   labs(x = "Variables", 
        y = "PC2 Loadings", 
-       title = "PCA Loadings for the Second Prinicpial Component")
+       title = "PCA Loadings for the Fourth Prinicpial Component")
 ```
 
 The fourth component places strong negative emphasis on the percentage of foreigners in the population, while placing strong positive emphasis on manufactures exports and ict related service exports. Unemployment in such countries is quite high.
@@ -536,7 +543,7 @@ To recap
 data.frame(z1=pca$x[,1], z2=pca$x[,2]) |> 
   ggplot(aes(z1, z2, label=identifiers$country_name)) + 
   geom_point(size=0) +
-  labs(title="First two principal components (scores)", x="PC1", y="PC2") +
+  labs(title="First and second principal components", x="PC1", y="PC2") +
   theme_bw() +
   theme(legend.position="bottom") + 
   geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE) 
@@ -546,11 +553,11 @@ data.frame(z1=pca$x[,1], z2=pca$x[,2]) |>
 # First vs third PC
 data.frame(z1=pca$x[,1], z3=pca$x[,3]) |> 
   ggplot(aes(z1, z3, label=identifiers$country_name)) + 
-  geom_point(size=0) +
+  geom_point(size=0.3) +
   labs(title="First and third principal components (scores)", x="PC1", y="PC3") +
   theme_bw() +
   theme(legend.position="bottom") + 
-  geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE) 
+  geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE)
 ```
 
 ## Clustering
@@ -559,26 +566,31 @@ data.frame(z1=pca$x[,1], z3=pca$x[,3]) |>
 
 First let's try to determine the optimal number of clusters using different methods.
 
-```{r, fig.height=10}
+```{r, warning=FALSE}
 fviz_nbclust(scale(imputed_df), kmeans, method = 'wss', k.max = 10, nstart = 1000)
 fviz_nbclust(scale(imputed_df), kmeans, method = 'silhouette', k.max = 10, nstart = 1000)
 fviz_nbclust(scale(imputed_df), kmeans, method = 'gap_stat', k.max = 10, nstart = 100, nboot = 100, verbose = FALSE)
+```
 
-library(cluster)
-library(mclust)
+As we can see the `wss` method is not really helpful as it does not show any sudden flattening of the curve. The curve only progressively flattens without giving us any clear hint to the optimal number of clusters.
+
+The `silhoutte` method suggest 7 clusters, while the `gap_stat` suggests 9 clusters. For this reason As seven clusters are already quite a lot, I will opt to have 7. However, this high number of clusters and the fact that we do not see any clear pattern in the `wss` graph further suggests me that my dataframe is not easily explainable by a low number of clusters and that the world's economies structures present many differences among them.
+
+```{r}
+# Running the clustering
 set.seed(123)
+fit <- kmeans(scale(imputed_df), iter.max = 1000, centers = 7, nstart = 10000)
 
-fit <- kmeans(scale(imputed_df), iter.max = 1000, centers = 8, nstart = 10000)
-fit
-
-
-
-# Number of observations by group
+# Number of observations by cluster
 groups = fit$cluster
-barplot(table(groups), col = "yellow")
+barplot(table(groups), col = "blue")
+```
 
+As can be seen the cluster n.7 and cluster n.1 have more than 50 observations while some other clusters (like 2 and 6) have less than 10 observations.
 
+I will now plot the characteristics of the center of the cluster to try to understand how the countries are being clustered.
 
+```{r, fig.width=15, fig.height=12}
 # Extract centers data
 centers_df <- as.data.frame(fit$centers)
 
@@ -589,86 +601,169 @@ centers_df$Cluster <- factor(1:nrow(centers_df))
 centers_df <- centers_df %>%
   pivot_longer(-Cluster, names_to = "Variable", values_to = "Value")
 
-library(tidytext)
 # Plot using ggplot
 ggplot(centers_df, aes(x = reorder_within(Variable, Value, Cluster), 
                        y = Value, fill = Cluster)) +
-  geom_col(position = "dodge") +
+  geom_col() +
   facet_wrap(~ Cluster, scales = "free_x") +  
   labs(title = "Cluster Centers", x = "Variable", y = "Value") +
   scale_x_reordered() +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  scale_fill_manual(values = brewer.pal(7, "Set1")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5),
+        panel.grid.minor = element_blank())
+```
 
-# Select here your favorite clustering tool
-map = data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=fit$cluster)
+-   Cluster 1 seems to be incorporating countries where `age_dependency` is quite high and agriculture has a relatively unimportant contribution to gdp (`agriculture_%gdp`). It is difficult to define these countries precisely, but they are likely to be developed diversified economies (`foreign_aid` is low, `female_labor_participation` is high), that integrated in the global markets and do not rely on natural resources too much
+-   Cluster 2 seems to be grouping a particular type of countries that place high importance on the export of agricultural raw materials (`rawagrimaterial_exports`). The interpretation of this cluster is difficult, but it should also be noted that very few (probably quite peculiar) countries are part of it
+-   Cluster 3 seems to capture countries that rely either on the primary sector through `food_exports` or on the tertiary sector through `tourism_exports`. However these countries are likely not to be high income countries: `foreign_aid` is high and their secondary sector is rather undeveloped (`industry_%gdp`) eventually suffering a trade deficit (`trade_balance`). These countries are probably small islands  
+-   Cluster 4 seems to mainly be characterized by high levels of unemployment, (`unemployment_total`, `unemployment_young`). These countries however are likely to quite developed and place a lot of importance on the tourism sector (`tourism_exports`)
+-   Cluster 5 seems to group countries that rely on `natural_resources_rents` (and `fuel_exports`). The fact that `migrant_population` is high makes me guess that these countries are Gulf countries.
+-   Cluster 6 seems to be made up of countries with a developed economy and that are attractive to a foreigners (`migrant_population`). For these countries the tertiary sector is really important (`services_%gdp`) and they are usually really integrated and open economies (`trade_openess` and `trade_balance`). These are probably mainly small, high-income countries, often being global financial centers as well (`finance_services_exports`) 
+-   Cluster 7 does not place a lot of emphasis on any of the variables present. However, they are mainly agricultural economies (`agriculture_%gdp`) rather than service economies (`services_%gdp`). As `age_dependency` is low and `foreign_aid` is high, these countries are likely to be low-income countries probably located mainly in Africa
+
+Let's try to understand better which countries form each cluster by using a map and a clusplot.
+
+```{r, results='hide'}
+# Plotting k-means clustering in a map
+map <- data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=fit$cluster)
 
 #Create data object supporting the map
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
-#Draw the map
+```
+
+```{r, warning=FALSE, out.width="100%", dpi=500}
+#Drawing the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
-               numCats = 8,
+               numCats = 7,
                missingCountryCol="white",
-               addLegend = TRUE, # or true?
+               addLegend = TRUE,
                borderCol = "black",
                catMethod = "categorical", 
-               colourPalette = "diverging",
-               mapTitle = c("Clusters"), 
+               colourPalette = brewer.pal(7, "Set1"),
+               mapTitle = c("7-means Clusters"), 
                lwd=0.5,
                oceanCol="lightblue")
 
-
-fviz_cluster(fit, data = imputed_df, geom = c("point"), ellipse.type = 'norm', pointsize = 1)+
-  theme_minimal()+
-  geom_text(label = identifiers$country_name, hjust = 0, vjust = 0,size = 2,check_overlap = F)+
-  scale_fill_brewer(palette = "Paired")
+#Drawing a clusplot
+fviz_cluster(fit, data = imputed_df, geom = c("point"), ellipse.type = 'norm', pointsize = 0.05) +
+  theme_minimal() +
+  geom_text(label = identifiers$country_name, hjust = 0, vjust = 0,size = 2,check_overlap = TRUE) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1")
 ```
+
+```{r}
+map |> 
+  filter(value==2) |> 
+  pull(country)
+```
+
+From the map it can be seen that cluster 1 is formed by basically all the high and middle income countries of the world. It is a really vast group of countries that probably have really diversified economies and they do not rely specifically on any of the sector or on a particular type of exports.
+
+It is really difficult to individuate cluster 2 countries, therefore I have decided to print them directly. These are a very small and peculiar group for which it is difficult to give a final explanation.
+
+Cluster 3 countries are the ones with the highest score for PC2 (score of how reliant on tourism an economy is), but that are not very rich countries. These are again mainly small island countries (from the map it is very difficult to see them because of this). 
+
+Cluster 4 countries are mainly mediterranean countries that rely on tourism, but where unemployment is quite high plus some relatively developed countries in the South of Africa.
+
+Cluster 5 is made up of the oil and gas producing countries especially in the Middle East, Central Asia, but also Northern and Western Africa.
+
+Cluster 6 countries are not visible in the map because they are usually small high-income countries. They are often financial centers and they are well integrated in the global economy. These countries score really high on the first principal component.
+
+Finally, cluster 7 seems to incorporate all the remaining middle and low income countries without any of the previous specifications. Middle income countries that end up in this cluster are probably more agricultural rather than service-based economies. They do not rely on a particular type of export.
 
 ### Hierarchical
 
-```{r}
+Even for hierarchical clustering I will group the world's economies into 7 clusters for consistency for what has been done above.
+
+```{r, warning=FALSE, fig.width=15}
+# Compute the Euclidean distance matrix using the scaled data
 d <- dist(scale(imputed_df), method = "euclidean") 
+# Perform hierarchical clustering using Ward's D2 method
 hc <- hclust(d, method = "ward.D2")
 
+# Assign country names as labels
 hc$labels <- identifiers$country_name
 
+# Visualize the dendrogram with 7 clusters
 fviz_dend(x = hc, 
-          k=8,
-          palette = "jco", 
-          rect = TRUE, rect_fill = TRUE, cex=0.5,
-          rect_border = "jco"          
-)
+          k=7,
+          rect = TRUE, 
+          rect_fill = TRUE, 
+          cex=0.5,
+          rect_border = "d3",
+          palette = "d3")
+```
 
+From this graph it is difficult to understand a lot. However, it can be seen that the leftmost cluster is again made up of oil and gas producing countries in Africa, the Middle East and Central Asia.
+
+The orange group seems made up of mostly middle income countries, but some low and high income countries are present as well. It is a very big group of countries and it is very difficult to define it precisely.
+
+Than there is again the group of 3 particular countries made up by Solomon Islands, Benin and Liberia for which, as discussed above, interpretation is difficult.
+
+The red cluster seems to be a group of the poorest countries in the world. These countries are also probably relying a lot on foreign aid.
+
+The purple group is made up of mainly Western countries (especially European countries).
+
+The second rightmost (brown) cluster is made up of other middle-income countries, mainly in Eastern Europe, Africa, but some in Central America as well.
+
+The last group on the right is made up of small states that often are islands.
+
+Let's see another visualization as well:
+
+```{r, warning=FALSE, out.width="100%", dpi=300}
+# Drawing a phylogenic tree
 fviz_dend(x = hc,
-          k = 8,
+          k = 7,
           color_labels_by_k = TRUE,
-          cex = 0.8,
+          cex = 0.5,
+          palette = "d3",
           type = "phylogenic",
-          repel = TRUE)+  
-  labs(title = "TBW...") + 
-  theme(axis.text.x = element_blank(), axis.text.y = element_blank())
+          repel = TRUE) +  
+  labs(title = "Phylogenic tree of clustered world's economies") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_blank())
+```
 
+And finally plot it on a map:
 
+```{r, results='hide'}
+#Assign each observation to one of the 7 clusters based on the hierarchical clustering
+groups.hc = cutree(hc, k = 7)
 
-groups.hc = cutree(hc, k = 8)
-
-# Map our PCA index in a map:
-map = data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=groups.hc)
-#Create data object supporting the map
+# Map the hierarchical cluster into a map
+map <- data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=groups.hc)
+# Create data object supporting the map
 matched <- joinCountryData2Map(map, joinCode = "ISO3",
                                nameJoinColumn = "country_code")
-#Draw the map
+```
+```{r, dpi=500, out.width="100%"}
+# Draw the map
 mapCountryData(mapToPlot=matched,
                nameColumnToPlot="value",
-               numCats = 8,
+               numCats = 7,
                missingCountryCol="white",
-               addLegend = TRUE, # or true?
+               addLegend = TRUE,
                borderCol = "black",
                catMethod = "categorical", 
-               colourPalette = "diverging",
-               mapTitle = c("Clusters"), 
+               colourPalette = pal_d3("category10")(7),
+               mapTitle = c("Hierarchical Clusters"), 
                lwd=0.5,
                oceanCol="lightblue")
 ```
+
+The map allows us to understand better the red cluster. Since the group is composed also by Greece and Spain this suggests that this group is again made of countries that rely heavily on tourism. Most of the rest of the countries of this group are small island countries which cannot be noticed in the plot. I was getting a similar cluster also through k-means clustering.
+
+The green cluster (oil producing countries) is very similar to the one I was obtaining using k-means clustering. 
+
+As mentioned before there is also the exact same strange cluster made up of Solomon Islands, Benin and Liberia as it was in k means clustering.
+
+One difference with k-means clustering is that in it, I was getting a big cluster composed of almost all the high and middle income countries, while here most of the high income countries are in the brown cluster, while middle-income countries are divided into the purple and the orange cluster. This also allows us to speculate more on the characteristics of the brown cluster. It is interesting to note that Australia and New Zealand are left out of the cluster containing most Western countries.
+
+Finally the cluster of poor countries (blue) is composed of less units than before in k-means clustering. Therefore the countries in this cluster are the ones that really have some of the worst economic situations in the world.
+
+## Conclusions
+
