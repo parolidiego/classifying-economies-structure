@@ -18,6 +18,7 @@ rm(list = ls())
 #install.packages("RColorBrewer")
 #install.packages("explore")
 #install.packages("corrplot")
+#install.packages("factoextra")
 library(tidyverse)
 library(DataExplorer)
 library(mice)
@@ -25,6 +26,7 @@ library(ggplot2)
 library(RColorBrewer)
 library(explore)
 library(corrplot)
+library(factoextra)
 ```
 
 ## Read the data
@@ -306,4 +308,178 @@ final_df |>
 
 Lastly I plot a correlation matrix from which it can be seen that there are some strong correlations, as well as numerous weak ones. For example having a high share of GDP coming from the primary sector (`agriculture_%gdp`) is negatively correlated with having a problem of an aging population (`age_dependency`), while it is positively correlated with receiving a lot of ODA (`foreign_aid`). 
 
+## Principal Component Analysis
+
+```{r}
+pca = prcomp(imputed_df, scale = TRUE)
+pca
+```
+
+As mentioned before, although all variables are percentages they are scaled to run principal components analysis to avoid the component weights being biased by the higher variance of some of the variables.
+
+```{r}
+fviz_screeplot(pca, addlabels = TRUE)
+pca$rotation[,1]
+fviz_contrib(pca, choice = "var", axes = 1)
+
+# Convert PCA rotation values into a dataframe
+pca_df <- data.frame(Variable = rownames(pca$rotation), 
+                     PC1 = pca$rotation[,1])
+
+# Create the barplot with rotated labels
+ggplot(pca_df, aes(x = reorder(Variable, PC1), y = PC1)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  labs(x = "Variables", y = "PC1 Loadings", title = "PCA Loadings for PC1")
+
+
+identifiers$country_name[order(pca$x[,1])][1:10]
+identifiers$country_name[order(pca$x[,1], decreasing=T)][1:10]
+
+data.frame(z1=pca$x[,1],z2=pca$x[,2]) |> 
+  ggplot(aes(z1,z2,label=identifiers$country_name)) + 
+  geom_point(size=0) +
+  labs(title="First two principal components (scores)", x="PC1", y="PC2") + #guides(color=guide_legend(title="HDI"))+
+  theme_bw() +theme(legend.position="bottom") + geom_text(size=3, hjust=0.6, vjust=0, check_overlap = TRUE) 
+
+# Map our PCA index in a map:
+map = data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=pca$x[,1])
+# #Convert the country code into iso3c using the function countrycode()
+# map$country = countrycode(map$country, 'country.name', 'iso3c')
+#Create data object supporting the map
+library(rworldmap)
+matched <- joinCountryData2Map(map, joinCode = "ISO3",
+                               nameJoinColumn = "country_code")
+#Draw the map
+mapCountryData(mapToPlot=matched,
+               nameColumnToPlot="value",
+               numCats = 6,
+               missingCountryCol="white",
+               addLegend = FALSE, # or true?
+               borderCol = "black",
+               catMethod = "diverging", 
+               colourPalette = "diverging",
+               mapTitle = c("PCA1"), 
+               lwd=0.5,
+               oceanCol="lightblue")
+```
+
+## Clustering
+
+### K-Means
+
+```{r, fig.height=10}
+fviz_nbclust(scale(imputed_df), kmeans, method = 'wss', k.max = 10, nstart = 1000)
+fviz_nbclust(scale(imputed_df), kmeans, method = 'silhouette', k.max = 10, nstart = 1000)
+fviz_nbclust(scale(imputed_df), kmeans, method = 'gap_stat', k.max = 10, nstart = 100, nboot = 100, verbose = FALSE)
+
+library(cluster)
+library(mclust)
+set.seed(123)
+
+fit <- kmeans(scale(imputed_df), iter.max = 1000, centers = 8, nstart = 10000)
+fit
+
+
+
+# Number of observations by group
+groups = fit$cluster
+barplot(table(groups), col = "yellow")
+
+
+
+# Extract centers data
+centers_df <- as.data.frame(fit$centers)
+
+# Add cluster labels
+centers_df$Cluster <- factor(1:nrow(centers_df))  
+
+# Convert to long format for ggplot
+centers_df <- centers_df %>%
+  pivot_longer(-Cluster, names_to = "Variable", values_to = "Value")
+
+library(tidytext)
+# Plot using ggplot
+ggplot(centers_df, aes(x = reorder_within(Variable, Value, Cluster), 
+                       y = Value, fill = Cluster)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ Cluster, scales = "free_x") +  
+  labs(title = "Cluster Centers", x = "Variable", y = "Value") +
+  scale_x_reordered() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Select here your favorite clustering tool
+map = data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=fit$cluster)
+
+#Create data object supporting the map
+matched <- joinCountryData2Map(map, joinCode = "ISO3",
+                               nameJoinColumn = "country_code")
+#Draw the map
+mapCountryData(mapToPlot=matched,
+               nameColumnToPlot="value",
+               numCats = 8,
+               missingCountryCol="white",
+               addLegend = TRUE, # or true?
+               borderCol = "black",
+               catMethod = "categorical", 
+               colourPalette = "diverging",
+               mapTitle = c("Clusters"), 
+               lwd=0.5,
+               oceanCol="lightblue")
+
+
+fviz_cluster(fit, data = imputed_df, geom = c("point"), ellipse.type = 'norm', pointsize = 1)+
+  theme_minimal()+
+  geom_text(label = identifiers$country_name, hjust = 0, vjust = 0,size = 2,check_overlap = F)+
+  scale_fill_brewer(palette = "Paired")
+```
+
+### Hierarchical
+
+```{r}
+d <- dist(scale(imputed_df), method = "euclidean") 
+hc <- hclust(d, method = "ward.D2")
+
+hc$labels <- identifiers$country_name
+
+fviz_dend(x = hc, 
+          k=8,
+          palette = "jco", 
+          rect = TRUE, rect_fill = TRUE, cex=0.5,
+          rect_border = "jco"          
+)
+
+fviz_dend(x = hc,
+          k = 8,
+          color_labels_by_k = TRUE,
+          cex = 0.8,
+          type = "phylogenic",
+          repel = TRUE)+  
+  labs(title = "TBW...") + 
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank())
+
+
+
+groups.hc = cutree(hc, k = 8)
+
+# Map our PCA index in a map:
+map = data.frame(country=identifiers$country_name, country_code=identifiers$country_code, value=groups.hc)
+#Create data object supporting the map
+matched <- joinCountryData2Map(map, joinCode = "ISO3",
+                               nameJoinColumn = "country_code")
+#Draw the map
+mapCountryData(mapToPlot=matched,
+               nameColumnToPlot="value",
+               numCats = 8,
+               missingCountryCol="white",
+               addLegend = TRUE, # or true?
+               borderCol = "black",
+               catMethod = "categorical", 
+               colourPalette = "diverging",
+               mapTitle = c("Clusters"), 
+               lwd=0.5,
+               oceanCol="lightblue")
+```
 
